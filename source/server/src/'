@@ -213,6 +213,11 @@ int handle_arguments(const char *binary_name, arguments *args, struct fsm_error 
     if (parse_in_port_t(binary_name, args->server_port_str, &args->server_port, err) == -1)
     {
         printf("for port: %s\n", args->server_port_str);
+        char message[24];
+
+        snprintf(message, sizeof(message), "Invalid port: %s.", args->server_port_str);
+        usage(binary_name);
+        SET_ERROR(err, message);
         return -1;
     }
 
