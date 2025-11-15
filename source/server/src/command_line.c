@@ -3,144 +3,144 @@
 
 int parse_arguments(int argc, char *argv[], arguments *args, struct fsm_error *err)
 {
-    int  opt;
-    bool H_flag, c_flag, p_flag, s_flag, w_flag, t_flag;
+    int opt;
+    int H_flag, c_flag, p_flag, s_flag, w_flag, t_flag;
 
-    opterr                           = 0;
-    H_flag                           = 0;
-    c_flag                           = 0;
-    p_flag                           = 0;
-    s_flag                           = 0;
-    w_flag                           = 0;
-    t_flag                           = 0;
+    opterr = 0;
+    H_flag = 0;
+    c_flag = 0;
+    p_flag = 0;
+    s_flag = 0;
+    w_flag = 0;
+    t_flag = 0;
 
     static struct option long_opts[] = {
-        {"hash", required_argument, 0, 'H'},
+        {"hash",       required_argument, 0, 'H'},
         {"checkpoint", required_argument, 0, 'c'},
-        {"port", required_argument, 0, 'p'},
-        {"server", required_argument, 0, 's'},
-        {"work-size", required_argument, 0, 'w'},
-        {"timeout", required_argument, 0, 't'},
-        {"help", no_argument, 0, 'h'},
-        {0, 0, 0, 0},
+        {"port",       required_argument, 0, 'p'},
+        {"server",     required_argument, 0, 's'},
+        {"work-size",  required_argument, 0, 'w'},
+        {"timeout",    required_argument, 0, 't'},
+        {"help",       no_argument,       0, 'h'},
+        {0,            0,                 0, 0  },
     };
 
     while ((opt = getopt_long(argc, argv, "H:c:p:s:w:t:h", long_opts, NULL)) != -1)
     {
         switch (opt)
         {
-        case 'H':
-        {
-            if (H_flag)
+            case 'H':
+            {
+                if (H_flag)
+                {
+                    usage(argv[0]);
+
+                    SET_ERROR(err, "option '-H' can only be passed in once.");
+
+                    return -1;
+                }
+
+                H_flag++;
+                args->crack_ctx.hash = optarg;
+                break;
+            }
+            case 'c':
+            {
+                if (c_flag)
+                {
+                    usage(argv[0]);
+
+                    SET_ERROR(err, "option '-c' can only be passed in once.");
+
+                    return -1;
+                }
+
+                c_flag++;
+                args->checkpoint_str = optarg;
+                break;
+            }
+            case 'p':
+            {
+                if (p_flag)
+                {
+                    usage(argv[0]);
+
+                    SET_ERROR(err, "option '-p' can only be passed in once.");
+
+                    return -1;
+                }
+
+                p_flag++;
+                args->server_port_str = optarg;
+                break;
+            }
+            case 's':
+            {
+                if (s_flag)
+                {
+                    usage(argv[0]);
+
+                    SET_ERROR(err, "option '-s' can only be passed in once.");
+
+                    return -1;
+                }
+
+                s_flag++;
+                args->server_addr = optarg;
+                break;
+            }
+            case 't':
+            {
+                if (t_flag)
+                {
+                    usage(argv[0]);
+
+                    SET_ERROR(err, "option '-t' can only be passed in once.");
+
+                    return -1;
+                }
+
+                t_flag++;
+                args->timeout_str = optarg;
+                break;
+            }
+            case 'w':
+            {
+                if (w_flag)
+                {
+                    usage(argv[0]);
+
+                    SET_ERROR(err, "option '-w' can only be passed in once.");
+
+                    return -1;
+                }
+
+                w_flag++;
+                args->work_size_str = optarg;
+                break;
+            }
+            case 'h':
             {
                 usage(argv[0]);
 
-                SET_ERROR(err, "option '-H' can only be passed in once.");
+                SET_ERROR(err, "user called for help");
 
                 return -1;
             }
+            case '?':
+            {
+                char message[24];
 
-            H_flag++;
-            args->hash = optarg;
-            break;
-        }
-        case 'c':
-        {
-            if (c_flag)
+                snprintf(message, sizeof(message), "Unknown option '-%c'.", optopt);
+                usage(argv[0]);
+                SET_ERROR(err, message);
+
+                return -1;
+            }
+            default:
             {
                 usage(argv[0]);
-
-                SET_ERROR(err, "option '-c' can only be passed in once.");
-
-                return -1;
             }
-
-            c_flag++;
-            args->checkpoint_str = optarg;
-            break;
-        }
-        case 'p':
-        {
-            if (p_flag)
-            {
-                usage(argv[0]);
-
-                SET_ERROR(err, "option '-p' can only be passed in once.");
-
-                return -1;
-            }
-
-            p_flag++;
-            args->server_port_str = optarg;
-            break;
-        }
-        case 's':
-        {
-            if (s_flag)
-            {
-                usage(argv[0]);
-
-                SET_ERROR(err, "option '-s' can only be passed in once.");
-
-                return -1;
-            }
-
-            s_flag++;
-            args->server_addr = optarg;
-            break;
-        }
-        case 't':
-        {
-            if (t_flag)
-            {
-                usage(argv[0]);
-
-                SET_ERROR(err, "option '-t' can only be passed in once.");
-
-                return -1;
-            }
-
-            t_flag++;
-            args->timeout_str = optarg;
-            break;
-        }
-        case 'w':
-        {
-            if (w_flag)
-            {
-                usage(argv[0]);
-
-                SET_ERROR(err, "option '-w' can only be passed in once.");
-
-                return -1;
-            }
-
-            w_flag++;
-            args->work_size_str = optarg;
-            break;
-        }
-        case 'h':
-        {
-            usage(argv[0]);
-
-            SET_ERROR(err, "user called for help");
-
-            return -1;
-        }
-        case '?':
-        {
-            char message[24];
-
-            snprintf(message, sizeof(message), "Unknown option '-%c'.", optopt);
-            usage(argv[0]);
-            SET_ERROR(err, message);
-
-            return -1;
-        }
-        default:
-        {
-            usage(argv[0]);
-        }
         }
     }
 
@@ -202,7 +202,7 @@ int handle_arguments(const char *binary_name, arguments *args, struct fsm_error 
         return -1;
     }
 
-    if (args->hash == NULL)
+    if (args->crack_ctx.hash == NULL)
     {
         SET_ERROR(err, "The Hash is required!");
         usage(binary_name);
@@ -217,26 +217,26 @@ int handle_arguments(const char *binary_name, arguments *args, struct fsm_error 
     }
 
     if (args->work_size_str == NULL)
-        args->work_size = 1000;
+        args->crack_ctx.work_size = 1000;
     else
     {
-        if (string_to_int(args->work_size_str, &args->work_size, err) != 0)
+        if (string_to_uint64(args->work_size_str, &args->crack_ctx.work_size, err) != 0)
             return -1;
     }
 
     if (args->checkpoint_str == NULL)
-        args->checkpoint = args->work_size / 4;
+        args->crack_ctx.checkpoint = args->crack_ctx.work_size / 4;
     else
     {
-        if (string_to_int(args->checkpoint_str, &args->checkpoint, err) != 0)
+        if (string_to_uint64(args->checkpoint_str, &args->crack_ctx.checkpoint, err) != 0)
             return -1;
     }
 
     if (args->timeout_str == NULL)
-        args->timeout = 600;
+        args->crack_ctx.timeout = 600;
     else
     {
-        if (string_to_int(args->timeout_str, &args->timeout, err) != 0)
+        if (string_to_uint64(args->timeout_str, &args->crack_ctx.timeout, err) != 0)
             return -1;
     }
 

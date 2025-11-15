@@ -20,7 +20,7 @@ typedef struct arguments
     int                     sockfd, num_of_threads, is_handshake_ack;
     int                     server_gui_fd, connected_gui_fd, is_connected_gui;
     int                     work_size, checkpoint, timeout, threads;
-    char                   *server_addr, *server_port_str, *threads_str, *work_size_str, *checkpoint_str, *timeout_str;
+    char                   *server_addr, *server_port_str, *threads_str;
     in_port_t               server_port, client_port;
     struct sockaddr_storage server_addr_struct, client_addr_struct, gui_addr_struct;
     uint32_t                expected_seq_number;

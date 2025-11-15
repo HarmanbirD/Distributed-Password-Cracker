@@ -3,6 +3,7 @@
 
 #include <glob.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,17 +18,55 @@ typedef enum
     FSM_USER_START
 } fsm_state;
 
+typedef struct worker_state
+{
+    int sockfd;
+
+    uint64_t start_index;
+    uint64_t work_size;
+    uint64_t end_index;
+
+    uint64_t last_checkpoint_index;
+    time_t   last_heard;
+
+    uint64_t checkpoint_interval;
+    uint32_t timeout_seconds;
+
+    int assigned;
+    int alive;
+} worker_state;
+
+typedef struct work_chunk
+{
+    size_t start;
+    size_t len;
+} work_chunk;
+
+typedef struct cracking_context
+{
+    char       *hash;
+    uint64_t    index;
+    uint64_t    work_size;
+    uint64_t    checkpoint;
+    uint64_t    timeout;
+    int         found;
+    char        password[255];
+    work_chunk *queue;
+    size_t      queue_len;
+} cracking_context;
+
 typedef struct arguments
 {
-    int                     sockfd, num_of_threads, is_handshake_ack;
-    int                     server_gui_fd, connected_gui_fd, is_connected_gui;
-    int                     work_size, checkpoint, timeout;
-    char                   *server_addr, *server_port_str, *hash, *work_size_str, *checkpoint_str, *timeout_str;
-    in_port_t               server_port, client_port;
-    struct sockaddr_storage server_addr_struct, client_addr_struct, gui_addr_struct;
-    uint32_t                expected_seq_number;
-    pthread_t               accept_gui_thread;
-    pthread_t              *thread_pool;
+    int                     sockfd, *client_sockets, num_ready;
+    cracking_context        crack_ctx;
+    char                   *work_size_str, *checkpoint_str, *timeout_str;
+    char                   *server_addr, *server_port_str;
+    in_port_t               server_port;
+    struct sockaddr_storage server_addr_struct;
+    nfds_t                  max_clients;
+    worker_state          **client_states;
+    struct pollfd          *file_descriptors;
+    struct timespec         start_wall, end_wall;
 } arguments;
 
 typedef struct fsm_context
@@ -59,10 +98,10 @@ static inline void fsm_error_init(struct fsm_error *e)
 {
     if (!e)
         return;
-    e->err_msg = NULL;
-    e->error_line = 0;
+    e->err_msg       = NULL;
+    e->error_line    = 0;
     e->function_name = NULL;
-    e->file_name = NULL;
+    e->file_name     = NULL;
 }
 
 static inline void fsm_error_clear(struct fsm_error *e)
@@ -70,10 +109,10 @@ static inline void fsm_error_clear(struct fsm_error *e)
     if (!e)
         return;
     free(e->err_msg);
-    e->err_msg = NULL;
-    e->error_line = 0;
+    e->err_msg       = NULL;
+    e->error_line    = 0;
     e->function_name = NULL;
-    e->file_name = NULL;
+    e->file_name     = NULL;
 }
 
 static inline char *fsm_strdup_or_null(const char *s)
@@ -84,22 +123,20 @@ static inline char *fsm_strdup_or_null(const char *s)
     return d;
 }
 
-static fsm_state_func fsm_transition(const struct fsm_context *context,
-                                     int from_id, int to_id, const struct client_fsm_transition transitions[]);
-int                   fsm_run(struct fsm_context *context, struct fsm_error *err,
-                              const struct client_fsm_transition transitions[]);
+int fsm_run(struct fsm_context *context, struct fsm_error *err,
+            const struct client_fsm_transition transitions[]);
 
-#define SET_ERROR(err, msg)                             \
-    do                                                  \
-    {                                                   \
-        if (err)                                        \
-        {                                               \
-            free((err)->err_msg);                       \
-            (err)->err_msg = fsm_strdup_or_null((msg)); \
-            err->error_line = __LINE__;                 \
-            err->function_name = __func__;              \
-            err->file_name = __FILENAME__;              \
-        }                                               \
+#define SET_ERROR(err, msg)                                 \
+    do                                                      \
+    {                                                       \
+        if (err)                                            \
+        {                                                   \
+            free((err)->err_msg);                           \
+            (err)->err_msg     = fsm_strdup_or_null((msg)); \
+            err->error_line    = __LINE__;                  \
+            err->function_name = __func__;                  \
+            err->file_name     = __FILENAME__;              \
+        }                                                   \
     } while (0)
 
 #define SET_TRACE(ctx, msg, curr_state)                     \
