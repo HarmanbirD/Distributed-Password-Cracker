@@ -22,6 +22,7 @@ enum main_application_states
     STATE_WAIT_WORK,
     STATE_START_TIMER,
     STATE_START_CRACKING,
+    STATE_SEND_DONE,
     STATE_STOP_TIMER,
     STATE_CLEANUP,
     STATE_ERROR
@@ -36,12 +37,14 @@ static int wait_hash_handler(struct fsm_context *context, struct fsm_error *err)
 static int wait_work_handler(struct fsm_context *context, struct fsm_error *err);
 static int start_timer_handler(struct fsm_context *context, struct fsm_error *err);
 static int start_cracking_handler(struct fsm_context *context, struct fsm_error *err);
+static int send_done_handler(struct fsm_context *context, struct fsm_error *err);
 static int stop_timer_handler(struct fsm_context *context, struct fsm_error *err);
 static int cleanup_handler(struct fsm_context *context, struct fsm_error *err);
 static int error_handler(struct fsm_context *context, struct fsm_error *err);
 
 static void sigint_handler(int signum);
 static int  setup_signal_handler(struct fsm_error *err);
+static void ignore_sigpipe(void);
 
 static volatile sig_atomic_t exit_flag = 0;
 
@@ -72,7 +75,9 @@ int main(int argc, char **argv)
         {STATE_WAIT_WORK,        STATE_START_CRACKING,   start_cracking_handler  },
         {STATE_WAIT_WORK,        STATE_CLEANUP,          cleanup_handler         },
         {STATE_START_TIMER,      STATE_START_CRACKING,   start_cracking_handler  },
+        {STATE_START_CRACKING,   STATE_SEND_DONE,        send_done_handler       },
         {STATE_START_CRACKING,   STATE_STOP_TIMER,       stop_timer_handler      },
+        {STATE_SEND_DONE,        STATE_WAIT_WORK,        wait_work_handler       },
         {STATE_STOP_TIMER,       STATE_CLEANUP,          cleanup_handler         },
         {STATE_ERROR,            STATE_CLEANUP,          cleanup_handler         },
         {STATE_PARSE_ARGUMENTS,  STATE_ERROR,            error_handler           },
@@ -87,7 +92,7 @@ int main(int argc, char **argv)
         {STATE_STOP_TIMER,       STATE_ERROR,            error_handler           },
         {STATE_CLEANUP,          FSM_EXIT,               NULL                    },
     };
-
+    ignore_sigpipe();
     fsm_run(&context, &err, transitions);
 
     return 0;
@@ -136,8 +141,8 @@ static int create_socket_handler(struct fsm_context *context, struct fsm_error *
     struct fsm_context *ctx;
     ctx = context;
     SET_TRACE(context, "in create socket", "STATE_CREATE_SOCKET");
-    ctx->args->sockfd = socket_create(ctx->args->server_addr_struct.ss_family, SOCK_STREAM, 0, err);
-    if (ctx->args->sockfd == -1)
+    ctx->args->ws->sockfd = socket_create(ctx->args->server_addr_struct.ss_family, SOCK_STREAM, 0, err);
+    if (ctx->args->ws->sockfd == -1)
     {
         return STATE_ERROR;
     }
@@ -150,7 +155,7 @@ static int connect_socket_handler(struct fsm_context *context, struct fsm_error 
     struct fsm_context *ctx;
     ctx = context;
     SET_TRACE(context, "in connect socket", "STATE_CONNECT_SOCKET");
-    if (socket_connect(ctx->args->sockfd, &ctx->args->server_addr_struct, ctx->args->server_port, err) == -1)
+    if (socket_connect(ctx->args->ws->sockfd, &ctx->args->server_addr_struct, ctx->args->server_port, err) == -1)
     {
         return STATE_ERROR;
     }
@@ -163,7 +168,7 @@ static int wait_hash_handler(struct fsm_context *context, struct fsm_error *err)
     struct fsm_context *ctx;
     ctx = context;
     SET_TRACE(context, "in wait hash", "STATE_WAIT_HASH");
-    if (receive_hash(ctx->args->sockfd, ctx->args->ws, err) == -1)
+    if (receive_hash(ctx->args->ws->sockfd, ctx->args->ws, err) == -1)
     {
         return STATE_ERROR;
     }
@@ -177,7 +182,7 @@ static int wait_work_handler(struct fsm_context *context, struct fsm_error *err)
     ctx = context;
     SET_TRACE(context, "in wait work", "STATE_WAIT_WORK");
 
-    int val = wait_for_work(ctx->args->sockfd, ctx->args->ws);
+    int val = wait_for_work(ctx->args->ws->sockfd, ctx->args->ws, err);
 
     if (val == -1)
         return STATE_ERROR;
@@ -210,10 +215,23 @@ static int start_cracking_handler(struct fsm_context *context, struct fsm_error 
     SET_TRACE(context, "in start cracking", "STATE_START_CRACKING");
     if (create_threads(ctx->args->threads, ctx->args->ws) == -1)
     {
-        return STATE_ERROR;
+        return STATE_SEND_DONE;
     }
 
     return STATE_STOP_TIMER;
+}
+
+static int send_done_handler(struct fsm_context *context, struct fsm_error *err)
+{
+    struct fsm_context *ctx;
+    ctx = context;
+    SET_TRACE(context, "in send done", "STATE_SEND_DONE");
+    if (send_done(ctx->args->ws->sockfd, err) == -1)
+    {
+        return STATE_ERROR;
+    }
+
+    return STATE_WAIT_WORK;
 }
 
 static int stop_timer_handler(struct fsm_context *context, struct fsm_error *err)
@@ -254,6 +272,8 @@ static int cleanup_handler(struct fsm_context *context, struct fsm_error *err)
         if (ctx->args->ws->hash)
             free(ctx->args->ws->hash);
 
+    free(ctx->args->ws);
+
     return FSM_EXIT;
 }
 
@@ -263,4 +283,12 @@ static int error_handler(struct fsm_context *context, struct fsm_error *err)
             err->err_msg, err->file_name, err->function_name, err->error_line);
 
     return STATE_CLEANUP;
+}
+
+static void ignore_sigpipe(void)
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = SIG_IGN;
+    sigaction(SIGPIPE, &sa, NULL);
 }

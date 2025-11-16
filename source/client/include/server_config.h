@@ -2,7 +2,6 @@
 #define CLIENT_SERVER_CONFIG_H
 
 #include "fsm.h"
-#include "protocol.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>
@@ -25,8 +24,10 @@ int       convert_address(const char *address, struct sockaddr_storage *addr,
                           in_port_t port, struct fsm_error *err);
 int       socket_connect(int sockfd, struct sockaddr_storage *addr, in_port_t port, struct fsm_error *err);
 int       receive_hash(int sockfd, worker_state *ws, struct fsm_error *err);
-int       wait_for_work(int sockfd, worker_state *ws);
+int       wait_for_work(int sockfd, worker_state *ws, struct fsm_error *err);
 int       send_checkpoint(worker_state *ws, uint64_t idx);
+int       send_done(int sockfd, struct fsm_error *err);
+int       send_found(int sockfd, const char *password);
 socklen_t size_of_address(struct sockaddr_storage *addr);
 int       get_sockaddr_info(struct sockaddr_storage *addr, char **ip_address, char **port, struct fsm_error *err);
 

@@ -113,53 +113,67 @@ int receive_hash(int sockfd, worker_state *ws, struct fsm_error *err)
     return 0;
 }
 
-int wait_for_work(int sockfd, worker_state *ws)
+int send_done(int sockfd, struct fsm_error *err)
+{
+
+    const char *msg = "DONE\n";
+    if (send(sockfd, msg, strlen(msg), 0) < 0)
+    {
+        SET_ERROR(err, "send(DONE) failed");
+
+        return -1;
+    }
+
+    return 0;
+}
+
+int wait_for_work(int sockfd, worker_state *ws, struct fsm_error *err)
 {
     char    buffer[512];
     ssize_t n = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
 
+    printf("Buffer: %s\n", buffer);
+
     if (n <= 0)
     {
-        perror("[WORKER] recv() failed waiting for WORK");
-        return -1; // disconnect or error
+        SET_ERROR(err, "[WORKER] recv() failed waiting for WORK");
+
+        return -1;
     }
 
     buffer[n] = '\0';
 
-    // ------------------------------------------------------------
-    // STOP (server found the password or is shutting down)
-    // ------------------------------------------------------------
     if (strncmp(buffer, "STOP", 4) == 0)
     {
         printf("[WORKER] Received STOP from server\n");
         return 1; // special meaning: stop everything
     }
 
-    // ------------------------------------------------------------
-    // WORK message expected:
-    // WORK <start> <len> <checkpoint> <timeout>
-    // ------------------------------------------------------------
     if (strncmp(buffer, "WORK ", 5) != 0)
     {
-        fprintf(stderr, "[WORKER] Invalid WORK message: %s\n", buffer);
+        char message[256];
+        snprintf(message, sizeof(message), "[WORKER] Invalid WORK message: %s\n", buffer);
+        SET_ERROR(err, message);
+
         return -1;
     }
 
     uint64_t start = 0, len = 0;
     uint32_t checkpoint = 0, timeout = 0;
 
-    // Parse WORK message
     int parsed = sscanf(buffer + 5,
                         "%" SCNu64 " %" SCNu64 " %" SCNu32 " %" SCNu32,
                         &start, &len, &checkpoint, &timeout);
 
     if (parsed != 4)
     {
-        fprintf(stderr, "[WORKER] Failed to parse WORK message: %s\n", buffer);
+        char message[256];
+        snprintf(message, sizeof(message), "[WORKER] Failed to parse WORK message: %s\n", buffer);
+        SET_ERROR(err, message);
+
         return -1;
     }
 
-    // Store into worker_state
     ws->start_index         = start;
     ws->work_size           = len;
     ws->end_index           = start + len - 1;
@@ -167,11 +181,12 @@ int wait_for_work(int sockfd, worker_state *ws)
     ws->timeout_seconds     = timeout;
 
     printf("[WORKER] Received WORK: start=%" PRIu64
-           ", len=%" PRIu64 ", checkpoint=%" PRIu64 ", timeout=%u\n",
+           ", len=%" PRIu64 ", checkpoint=%" PRIu64 ", timeout=%u, end index: %" PRIu64 "\n",
            ws->start_index,
            ws->work_size,
            ws->checkpoint_interval,
-           ws->timeout_seconds);
+           ws->timeout_seconds,
+           ws->end_index);
 
     return 0;
 }
@@ -193,10 +208,36 @@ int send_checkpoint(worker_state *ws, uint64_t idx)
     ssize_t sent = send(ws->sockfd, buffer, n, 0);
     if (sent != n)
     {
-        perror("send() checkpoint failed");
         return -1;
     }
     printf("Sent checkpoint %" PRIu64 "\n", idx);
+
+    return 0;
+}
+
+int send_found(int sockfd, const char *password)
+{
+    if (!password)
+    {
+        // SET_ERROR(err, "send_found(): password is NULL");
+        return -1;
+    }
+
+    char buffer[256];
+
+    int n = snprintf(buffer, sizeof(buffer), "FOUND %s\n", password);
+    if (n <= 0 || n >= (int)sizeof(buffer))
+    {
+        // SET_ERROR(err, "send_found(): snprintf failed or message too long");
+        return -1;
+    }
+
+    ssize_t sent = send(sockfd, buffer, n, 0);
+    if (sent != n)
+    {
+        // SET_ERROR(err, "send_found(): send() failed");
+        return -1;
+    }
 
     return 0;
 }

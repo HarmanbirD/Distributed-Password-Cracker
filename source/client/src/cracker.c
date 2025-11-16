@@ -1,6 +1,7 @@
 #include "cracker.h"
 #include "fsm.h"
 #include "server_config.h"
+#include <stdatomic.h>
 
 char *index_to_password(uint64_t index)
 {
@@ -38,6 +39,7 @@ char *index_to_password(uint64_t index)
 
 void *worker(void *arg)
 {
+    printf("Start:\n");
     struct worker_state *ws = (struct worker_state *)arg;
 
     struct crypt_data cdata;
@@ -45,14 +47,23 @@ void *worker(void *arg)
 
     while (!atomic_load(&found))
     {
-        uint64_t idx = (uint64_t)atomic_fetch_add(&ws->start_index, 1);
-        if (idx % ws->checkpoint_interval == 0)
+        uint64_t idx = (uint64_t)atomic_fetch_add(&task_counter, 1);
+
+        if (idx > ws->work_size - 1)
         {
-            printf("Index: %" PRIu64 "\n", idx);
-            send_checkpoint(ws, idx);
+            break;
         }
 
-        char *pass = index_to_password(idx);
+        if (idx % ws->checkpoint_interval == 0)
+        {
+            if (send_checkpoint(ws, ws->start_index + idx) == -1)
+            {
+                atomic_store(&found, true);
+                break;
+            }
+        }
+
+        char *pass = index_to_password(ws->start_index + idx);
 
         char *result = crypt_r(pass, ws->hash, &cdata);
         if (result != NULL)
@@ -67,6 +78,7 @@ void *worker(void *arg)
                     pthread_mutex_unlock(&found_mutex);
                 }
                 printf("Password found!\nPassword is: %s\n", pass);
+                send_found(ws->sockfd, pass);
 
                 free(pass);
                 break;

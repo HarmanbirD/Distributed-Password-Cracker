@@ -42,6 +42,8 @@ int parse_arguments(int argc, char *argv[], arguments *args, struct fsm_error *e
 
                 H_flag++;
                 args->crack_ctx.hash = optarg;
+                printf("Hash: %s\n", optarg);
+                printf("Hash: %s\n", args->crack_ctx.hash);
                 break;
             }
             case 'c':

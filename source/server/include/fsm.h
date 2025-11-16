@@ -19,6 +19,8 @@ typedef enum
     FSM_USER_START
 } fsm_state;
 
+#define RECV_BUF_SIZE 2048
+
 typedef struct worker_state
 {
     int sockfd;
@@ -33,8 +35,10 @@ typedef struct worker_state
     uint64_t checkpoint_interval;
     uint32_t timeout_seconds;
 
-    int assigned;
-    int alive;
+    int    assigned;
+    int    alive;
+    char   recv_buf[RECV_BUF_SIZE];
+    size_t recv_len;
 } worker_state;
 
 typedef struct work_chunk

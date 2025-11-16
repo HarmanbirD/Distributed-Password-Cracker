@@ -24,14 +24,14 @@ typedef struct worker_state
 {
     int sockfd;
 
-    char                *hash;
-    atomic_uint_fast64_t start_index;
-    uint64_t             work_size;
-    uint64_t             end_index;
-    uint64_t             checkpoint_interval;
-    uint32_t             timeout_seconds;
-    char                 found_candidate[64];
-    pthread_mutex_t      found_mutex;
+    char           *hash;
+    uint64_t        start_index;
+    uint64_t        work_size;
+    uint64_t        end_index;
+    uint64_t        checkpoint_interval;
+    uint32_t        timeout_seconds;
+    char            found_candidate[64];
+    pthread_mutex_t found_mutex;
 } worker_state;
 
 typedef struct arguments

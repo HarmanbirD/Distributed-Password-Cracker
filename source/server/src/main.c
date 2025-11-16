@@ -197,7 +197,7 @@ static int start_polling_handler(struct fsm_context *context, struct fsm_error *
     ctx = context;
     SET_TRACE(context, "in start polling", "STATE_START_POLLING");
 
-    while (!exit_flag)
+    while (exit_flag == 0 && ctx->args->crack_ctx.found == 0)
     {
         if (polling(ctx->args->sockfd, &ctx->args->file_descriptors, &ctx->args->max_clients,
                     &ctx->args->client_sockets, &ctx->args->client_states, &ctx->args->crack_ctx,

@@ -192,8 +192,8 @@ int polling(int sockfd, struct pollfd **file_descriptors, nfds_t *max_clients, i
             ws->alive      = 1;
             ws->assigned   = 0;
             ws->last_heard = time(NULL);
+            ws->recv_len   = 0;
 
-            // assign_work_to_client(ws, crack_ctx, err);
             send_hash_to_worker(ws, crack_ctx, err);
 
             num_ready--;
@@ -211,11 +211,13 @@ int polling(int sockfd, struct pollfd **file_descriptors, nfds_t *max_clients, i
 
         if ((*file_descriptors)[i + 1].revents & POLLIN)
         {
-            printf("Processing client message\n");
             sd = (*client_sockets)[i];
 
             if (process_client_message(sd, ws, crack_ctx, err) == -1)
             {
+                if (!crack_ctx->found)
+                    reclaim_and_redistribute(ws, crack_ctx);
+
                 handle_client_disconnect(i, client_sockets, client_states, max_clients);
                 continue;
             }
@@ -224,7 +226,6 @@ int polling(int sockfd, struct pollfd **file_descriptors, nfds_t *max_clients, i
             num_ready--;
         }
 
-        printf("Checking timeouts\n");
         if (time(NULL) - ws->last_heard > ws->timeout_seconds)
         {
             printf("Worker timed out! Reassigning work.\n");
@@ -283,20 +284,58 @@ int assign_work_to_client(struct worker_state *ws, struct cracking_context *crac
     return 0;
 }
 
-int process_client_message(int sd, worker_state *ws, struct cracking_context *crack_ctx, struct fsm_error *err)
+int process_client_message(int sd, worker_state *ws,
+                           struct cracking_context *crack_ctx,
+                           struct fsm_error        *err)
 {
-    char    buffer[256];
-    ssize_t n = recv(sd, buffer, sizeof(buffer) - 1, 0);
+    char    temp[256];
+    ssize_t n = recv(sd, temp, sizeof(temp), 0);
 
     if (n <= 0)
+        return -1;
+
+    if (ws->recv_len + n >= RECV_BUF_SIZE)
     {
+        SET_ERROR(err, "Worker recv buffer overflow");
         return -1;
     }
 
-    buffer[n] = '\0';
+    memcpy(ws->recv_buf + ws->recv_len, temp, n);
+    ws->recv_len += n;
 
-    printf("Recieved: %s\n", buffer);
+    size_t start = 0;
 
+    for (size_t i = 0; i < ws->recv_len; i++)
+    {
+        if (ws->recv_buf[i] == '\n')
+        {
+            ws->recv_buf[i] = '\0';
+
+            char *msg = ws->recv_buf + start;
+            if (handle_single_message(sd, ws, crack_ctx, msg, err) != 0)
+                return -1;
+
+            start = i + 1;
+        }
+    }
+
+    if (start < ws->recv_len)
+    {
+        size_t leftover = ws->recv_len - start;
+        memmove(ws->recv_buf, ws->recv_buf + start, leftover);
+        ws->recv_len = leftover;
+    }
+    else
+    {
+        ws->recv_len = 0;
+    }
+
+    return 0;
+}
+
+int handle_single_message(int sd, worker_state *ws, struct cracking_context *crack_ctx,
+                          const char *buffer, struct fsm_error *err)
+{
     if (strncmp(buffer, "READY", 5) == 0)
     {
         printf("[SERVER] Worker %d is READY\n", sd);
@@ -330,7 +369,7 @@ int process_client_message(int sd, worker_state *ws, struct cracking_context *cr
 
         printf("[SERVER] WORKER %d FOUND PASSWORD: %s\n", sd, pw);
 
-        crack_ctx->found = true;
+        crack_ctx->found = 1;
         strncpy(crack_ctx->password, pw, sizeof(crack_ctx->password));
 
         return 1;
@@ -338,7 +377,7 @@ int process_client_message(int sd, worker_state *ws, struct cracking_context *cr
     else if (strncmp(buffer, "DONE", 4) == 0)
     {
         printf("[SERVER] Worker %d finished its work.\n", sd);
-        ws->assigned = false;
+        ws->assigned = 0;
 
         if (!crack_ctx->found)
         {
@@ -417,13 +456,12 @@ void reclaim_and_redistribute(worker_state *ws, struct cracking_context *crack_c
 
     uint64_t remaining = (end - start) + 1;
 
-    printf("[SERVER] Reclaiming %" PRIu64 " units of unfinished work "
+    printf("[SERVER] Reclaiming %" PRIu64 " units of unfinished work from %d "
            "(%" PRIu64 " -> %" PRIu64 ")\n",
-           remaining, start, end);
+           remaining, ws->sockfd, start, end);
 
     push_work_back_into_queue(crack_ctx, start, remaining);
 
-    // Optional:
     ws->assigned = false;
     ws->alive    = false;
 }
@@ -513,14 +551,23 @@ int socket_bind(int sockfd, struct sockaddr_storage *addr, struct fsm_error *err
 
     if (get_sockaddr_info(addr, &ip_address, &port, err) != 0)
     {
+        free(ip_address);
+        free(port);
+
         return -1;
     }
 
     printf("binding to: %s:%s\n", ip_address, port);
 
+    int yes = 1;
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
     if (bind(sockfd, (struct sockaddr *)addr, size_of_address(addr)) == -1)
     {
         SET_ERROR(err, strerror(errno));
+        free(ip_address);
+        free(port);
+
         return -1;
     }
 
