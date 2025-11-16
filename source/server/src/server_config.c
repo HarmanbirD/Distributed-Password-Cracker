@@ -194,6 +194,7 @@ int polling(int sockfd, struct pollfd **file_descriptors, nfds_t *max_clients, i
             ws->last_heard = time(NULL);
 
             // assign_work_to_client(ws, crack_ctx, err);
+            send_hash_to_worker(ws, crack_ctx, err);
 
             num_ready--;
         }
@@ -210,6 +211,7 @@ int polling(int sockfd, struct pollfd **file_descriptors, nfds_t *max_clients, i
 
         if ((*file_descriptors)[i + 1].revents & POLLIN)
         {
+            printf("Processing client message\n");
             sd = (*client_sockets)[i];
 
             if (process_client_message(sd, ws, crack_ctx, err) == -1)
@@ -222,6 +224,7 @@ int polling(int sockfd, struct pollfd **file_descriptors, nfds_t *max_clients, i
             num_ready--;
         }
 
+        printf("Checking timeouts\n");
         if (time(NULL) - ws->last_heard > ws->timeout_seconds)
         {
             printf("Worker timed out! Reassigning work.\n");
@@ -291,6 +294,8 @@ int process_client_message(int sd, worker_state *ws, struct cracking_context *cr
     }
 
     buffer[n] = '\0';
+
+    printf("Recieved: %s\n", buffer);
 
     if (strncmp(buffer, "READY", 5) == 0)
     {

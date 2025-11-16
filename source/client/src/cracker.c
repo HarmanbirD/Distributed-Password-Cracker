@@ -1,4 +1,6 @@
 #include "cracker.h"
+#include "fsm.h"
+#include "server_config.h"
 
 char *index_to_password(uint64_t index)
 {
@@ -24,8 +26,8 @@ char *index_to_password(uint64_t index)
 
     for (i = 0; i < len; i++)
     {
-        temp[len - i - 1]  = charset[local_index % CHARSET_SIZE];
-        local_index       /= CHARSET_SIZE;
+        temp[len - i - 1] = charset[local_index % CHARSET_SIZE];
+        local_index /= CHARSET_SIZE;
     }
 
     temp[len] = '\0';
@@ -36,24 +38,26 @@ char *index_to_password(uint64_t index)
 
 void *worker(void *arg)
 {
-    // printf("Thread %lu created\n", pthread_self());
-    const char       *hash = (const char *)arg;
+    struct worker_state *ws = (struct worker_state *)arg;
 
     struct crypt_data cdata;
     cdata.initialized = 0;
 
     while (!atomic_load(&found))
     {
-        uint64_t idx    = (uint64_t)atomic_fetch_add(&task_counter, 1);
+        uint64_t idx = (uint64_t)atomic_fetch_add(&ws->start_index, 1);
+        if (idx % ws->checkpoint_interval == 0)
+        {
+            printf("Index: %" PRIu64 "\n", idx);
+            send_checkpoint(ws, idx);
+        }
 
-        char    *pass   = index_to_password(idx);
-        // if ((idx & 0xFFF) == 0)
-        //     printf("Thread %lu checked pass: %s, idx %" PRIu64 "\n", pthread_self(), pass, idx);
+        char *pass = index_to_password(idx);
 
-        char    *result = crypt_r(pass, hash, &cdata);
+        char *result = crypt_r(pass, ws->hash, &cdata);
         if (result != NULL)
         {
-            if (strcmp(hash, result) == 0)
+            if (strcmp(ws->hash, result) == 0)
             {
                 if (!atomic_exchange(&found, true))
                 {
@@ -74,9 +78,9 @@ void *worker(void *arg)
     return NULL;
 }
 
-int create_threads(size_t number_of_threads, const char *hash)
+int create_threads(size_t number_of_threads, struct worker_state *ws)
 {
-    printf("hash: %s\n", hash);
+    printf("hash: %s\n", ws->hash);
     pthread_t *threads = malloc(number_of_threads * sizeof(pthread_t));
     if (!threads)
         return -1;
@@ -85,11 +89,9 @@ int create_threads(size_t number_of_threads, const char *hash)
     atomic_store(&found, false);
     found_candidate[0] = '\0';
 
-    char *hash_copy    = strdup(hash);
-
-    for (int i = 0; i < number_of_threads; i++)
+    for (size_t i = 0; i < number_of_threads; i++)
     {
-        int rc = pthread_create(&threads[i], NULL, worker, (void *)hash_copy);
+        int rc = pthread_create(&threads[i], NULL, worker, (void *)ws);
 
         if (rc != 0)
         {
@@ -107,6 +109,5 @@ int create_threads(size_t number_of_threads, const char *hash)
 
     bool got = atomic_load(&found);
     free(threads);
-    free(hash_copy);
     return (got) ? 0 : -1;
 }

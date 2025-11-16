@@ -38,9 +38,6 @@ static int  error_handler(struct fsm_context *context, struct fsm_error *err);
 
 static volatile sig_atomic_t exit_flag = 0;
 
-void *init_timer_function(void *ptr);
-void *init_gui_function(void *ptr);
-
 int main(int argc, char **argv)
 {
     struct fsm_error err;

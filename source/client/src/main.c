@@ -1,9 +1,13 @@
 #include "command_line.h"
+#include "cracker.h"
 #include "fsm.h"
 #include "linked_list.h"
 #include "protocol.h"
 #include "server_config.h"
+#include <bits/time.h>
 #include <pthread.h>
+#include <signal.h>
+#include <time.h>
 
 #define TIMER_TIME 1
 
@@ -13,22 +17,12 @@ enum main_application_states
     STATE_HANDLE_ARGUMENTS,
     STATE_CONVERT_ADDRESS,
     STATE_CREATE_SOCKET,
-    STATE_BIND_SOCKET,
-    STATE_LISTEN,
-    STATE_CREATE_GUI_THREAD,
-    STATE_CREATE_WINDOW,
-    STATE_START_HANDSHAKE,
-    STATE_CREATE_HANDSHAKE_TIMER,
-    STATE_WAIT_FOR_SYN_ACK,
-    STATE_SEND_HANDSHAKE_ACK,
-    STATE_CREATE_RECV_THREAD,
-    STATE_READ_FROM_KEYBOARD,
-    STATE_CHECK_WINDOW,
-    STATE_ADD_PACKET_TO_BUFFER,
-    STATE_ADD_PACKET_TO_WINDOW,
-    STATE_CHECK_WINDOW_THREAD,
-    STATE_SEND_MESSAGE,
-    STATE_CREATE_TIMER_THREAD,
+    STATE_CONNECT_SOCKET,
+    STATE_WAIT_HASH,
+    STATE_WAIT_WORK,
+    STATE_START_TIMER,
+    STATE_START_CRACKING,
+    STATE_STOP_TIMER,
     STATE_CLEANUP,
     STATE_ERROR
 };
@@ -37,93 +31,61 @@ static int parse_arguments_handler(struct fsm_context *context, struct fsm_error
 static int handle_arguments_handler(struct fsm_context *context, struct fsm_error *err);
 static int convert_address_handler(struct fsm_context *context, struct fsm_error *err);
 static int create_socket_handler(struct fsm_context *context, struct fsm_error *err);
-static int bind_socket_handler(struct fsm_context *context, struct fsm_error *err);
-static int listen_handler(struct fsm_context *context, struct fsm_error *err);
-static int create_gui_thread_handler(struct fsm_context *context, struct fsm_error *err);
-static int create_window_handler(struct fsm_context *context, struct fsm_error *err);
-static int start_handshake_handler(struct fsm_context *context, struct fsm_error *err);
-static int create_handshake_timer_handler(struct fsm_context *context, struct fsm_error *err);
-static int wait_for_syn_ack_handler(struct fsm_context *context, struct fsm_error *err);
-static int send_handshake_ack_handler(struct fsm_context *context, struct fsm_error *err);
-static int create_recv_thread_handler(struct fsm_context *context, struct fsm_error *err);
-static int read_from_keyboard_handler(struct fsm_context *context, struct fsm_error *err);
-static int check_window_handler(struct fsm_context *context, struct fsm_error *err);
-static int add_packet_to_buffer_handler(struct fsm_context *context, struct fsm_error *err);
-static int add_packet_to_window_handler(struct fsm_context *context, struct fsm_error *err);
-static int check_window_thread_handler(struct fsm_context *context, struct fsm_error *err);
-static int send_message_handler(struct fsm_context *context, struct fsm_error *err);
-static int create_timer_thread_handler(struct fsm_context *context, struct fsm_error *err);
+static int connect_socket_handler(struct fsm_context *context, struct fsm_error *err);
+static int wait_hash_handler(struct fsm_context *context, struct fsm_error *err);
+static int wait_work_handler(struct fsm_context *context, struct fsm_error *err);
+static int start_timer_handler(struct fsm_context *context, struct fsm_error *err);
+static int start_cracking_handler(struct fsm_context *context, struct fsm_error *err);
+static int stop_timer_handler(struct fsm_context *context, struct fsm_error *err);
 static int cleanup_handler(struct fsm_context *context, struct fsm_error *err);
 static int error_handler(struct fsm_context *context, struct fsm_error *err);
 
-static int wait_handler(struct fsm_context *context, struct fsm_error *err);
-static int check_ack_number_handler(struct fsm_context *context, struct fsm_error *err);
-static int remove_packet_from_window_handler(struct fsm_context *context, struct fsm_error *err);
-static int send_packet_handler(struct fsm_context *context, struct fsm_error *err);
-static int termination_handler(struct fsm_context *context, struct fsm_error *err);
-
 static void sigint_handler(int signum);
 static int  setup_signal_handler(struct fsm_error *err);
-int         create_file(const char *filepath, FILE **fp, struct fsm_error *err);
 
 static volatile sig_atomic_t exit_flag = 0;
-
-void *init_recv_function(void *ptr);
-void *init_timer_function(void *ptr);
-void *init_window_checker_function(void *ptr);
-void *init_gui_function(void *ptr);
-
-pthread_mutex_t num_of_threads_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char **argv)
 {
     struct fsm_error err;
     struct arguments args = {
-        .threads = 0,
+        .threads       = 0,
+        .timer_started = 0,
+        .ws            = NULL,
     };
     struct fsm_context context = {
         .argc = argc,
         .argv = argv,
-        .args = &args};
+        .args = &args,
+    };
+    context.args->ws = calloc(1, sizeof(worker_state));
 
     static struct fsm_transition transitions[] = {
-        {FSM_INIT,                     STATE_PARSE_ARGUMENTS,        parse_arguments_handler       },
-        {STATE_PARSE_ARGUMENTS,        STATE_HANDLE_ARGUMENTS,       handle_arguments_handler      },
-        {STATE_HANDLE_ARGUMENTS,       STATE_CONVERT_ADDRESS,        convert_address_handler       },
-        {STATE_CONVERT_ADDRESS,        STATE_CREATE_SOCKET,          create_socket_handler         },
-        {STATE_CREATE_SOCKET,          STATE_BIND_SOCKET,            bind_socket_handler           },
-        {STATE_BIND_SOCKET,            STATE_LISTEN,                 listen_handler                },
-        {STATE_LISTEN,                 STATE_CREATE_GUI_THREAD,      create_gui_thread_handler     },
-        {STATE_CREATE_GUI_THREAD,      STATE_CREATE_WINDOW,          create_window_handler         },
-        {STATE_CREATE_WINDOW,          STATE_START_HANDSHAKE,        start_handshake_handler       },
-        {STATE_START_HANDSHAKE,        STATE_CREATE_HANDSHAKE_TIMER, create_handshake_timer_handler},
-        {STATE_CREATE_HANDSHAKE_TIMER, STATE_WAIT_FOR_SYN_ACK,       wait_for_syn_ack_handler      },
-        {STATE_WAIT_FOR_SYN_ACK,       STATE_SEND_HANDSHAKE_ACK,     send_handshake_ack_handler    },
-        {STATE_WAIT_FOR_SYN_ACK,       STATE_CLEANUP,                cleanup_handler               },
-        {STATE_SEND_HANDSHAKE_ACK,     STATE_CREATE_RECV_THREAD,     create_recv_thread_handler    },
-        {STATE_CREATE_RECV_THREAD,     STATE_READ_FROM_KEYBOARD,     read_from_keyboard_handler    },
-        {STATE_READ_FROM_KEYBOARD,     STATE_CHECK_WINDOW,           check_window_handler          },
-        {STATE_CHECK_WINDOW,           STATE_ADD_PACKET_TO_WINDOW,   add_packet_to_window_handler  },
-        {STATE_CHECK_WINDOW,           STATE_ADD_PACKET_TO_BUFFER,   add_packet_to_buffer_handler  },
-        {STATE_ADD_PACKET_TO_BUFFER,   STATE_READ_FROM_KEYBOARD,     read_from_keyboard_handler    },
-        {STATE_ADD_PACKET_TO_BUFFER,   STATE_CHECK_WINDOW_THREAD,    check_window_thread_handler   },
-        {STATE_ADD_PACKET_TO_WINDOW,   STATE_SEND_MESSAGE,           send_message_handler          },
-        //            {STATE_ADD_PACKET_TO_WINDOW,    STATE_CHECK_WINDOW_THREAD,  check_window_thread_handler},
-        {STATE_CHECK_WINDOW_THREAD,    STATE_READ_FROM_KEYBOARD,     read_from_keyboard_handler    },
-        {STATE_SEND_MESSAGE,           STATE_CREATE_TIMER_THREAD,    create_timer_thread_handler   },
-        {STATE_CREATE_TIMER_THREAD,    STATE_READ_FROM_KEYBOARD,     read_from_keyboard_handler    },
-        {STATE_READ_FROM_KEYBOARD,     STATE_CLEANUP,                cleanup_handler               },
-        {STATE_ERROR,                  STATE_CLEANUP,                cleanup_handler               },
-        {STATE_PARSE_ARGUMENTS,        STATE_ERROR,                  error_handler                 },
-        {STATE_HANDLE_ARGUMENTS,       STATE_ERROR,                  error_handler                 },
-        {STATE_CONVERT_ADDRESS,        STATE_ERROR,                  error_handler                 },
-        {STATE_CREATE_SOCKET,          STATE_ERROR,                  error_handler                 },
-        {STATE_BIND_SOCKET,            STATE_ERROR,                  error_handler                 },
-        {STATE_CREATE_WINDOW,          STATE_ERROR,                  error_handler                 },
-        {STATE_CREATE_RECV_THREAD,     STATE_ERROR,                  error_handler                 },
-        {STATE_START_HANDSHAKE,        STATE_ERROR,                  error_handler                 },
-        {STATE_SEND_MESSAGE,           STATE_ERROR,                  error_handler                 },
-        {STATE_CLEANUP,                FSM_EXIT,                     NULL                          },
+        {FSM_INIT,               STATE_PARSE_ARGUMENTS,  parse_arguments_handler },
+        {STATE_PARSE_ARGUMENTS,  STATE_HANDLE_ARGUMENTS, handle_arguments_handler},
+        {STATE_HANDLE_ARGUMENTS, STATE_CONVERT_ADDRESS,  convert_address_handler },
+        {STATE_CONVERT_ADDRESS,  STATE_CREATE_SOCKET,    create_socket_handler   },
+        {STATE_CREATE_SOCKET,    STATE_CONNECT_SOCKET,   connect_socket_handler  },
+        {STATE_CONNECT_SOCKET,   STATE_WAIT_HASH,        wait_hash_handler       },
+        {STATE_WAIT_HASH,        STATE_WAIT_WORK,        wait_work_handler       },
+        {STATE_WAIT_WORK,        STATE_START_TIMER,      start_timer_handler     },
+        {STATE_WAIT_WORK,        STATE_START_CRACKING,   start_cracking_handler  },
+        {STATE_WAIT_WORK,        STATE_CLEANUP,          cleanup_handler         },
+        {STATE_START_TIMER,      STATE_START_CRACKING,   start_cracking_handler  },
+        {STATE_START_CRACKING,   STATE_STOP_TIMER,       stop_timer_handler      },
+        {STATE_STOP_TIMER,       STATE_CLEANUP,          cleanup_handler         },
+        {STATE_ERROR,            STATE_CLEANUP,          cleanup_handler         },
+        {STATE_PARSE_ARGUMENTS,  STATE_ERROR,            error_handler           },
+        {STATE_HANDLE_ARGUMENTS, STATE_ERROR,            error_handler           },
+        {STATE_CONVERT_ADDRESS,  STATE_ERROR,            error_handler           },
+        {STATE_CREATE_SOCKET,    STATE_ERROR,            error_handler           },
+        {STATE_CONNECT_SOCKET,   STATE_ERROR,            error_handler           },
+        {STATE_WAIT_HASH,        STATE_ERROR,            error_handler           },
+        {STATE_WAIT_WORK,        STATE_ERROR,            error_handler           },
+        {STATE_WAIT_WORK,        STATE_ERROR,            error_handler           },
+        {STATE_START_CRACKING,   STATE_ERROR,            error_handler           },
+        {STATE_STOP_TIMER,       STATE_ERROR,            error_handler           },
+        {STATE_CLEANUP,          FSM_EXIT,               NULL                    },
     };
 
     fsm_run(&context, &err, transitions);
@@ -174,13 +136,101 @@ static int create_socket_handler(struct fsm_context *context, struct fsm_error *
     struct fsm_context *ctx;
     ctx = context;
     SET_TRACE(context, "in create socket", "STATE_CREATE_SOCKET");
-    ctx->args->sockfd = socket_create(ctx->args->client_addr_struct.ss_family, SOCK_DGRAM, 0, err);
+    ctx->args->sockfd = socket_create(ctx->args->server_addr_struct.ss_family, SOCK_STREAM, 0, err);
     if (ctx->args->sockfd == -1)
     {
         return STATE_ERROR;
     }
 
-    return STATE_BIND_SOCKET;
+    return STATE_CONNECT_SOCKET;
+}
+
+static int connect_socket_handler(struct fsm_context *context, struct fsm_error *err)
+{
+    struct fsm_context *ctx;
+    ctx = context;
+    SET_TRACE(context, "in connect socket", "STATE_CONNECT_SOCKET");
+    if (socket_connect(ctx->args->sockfd, &ctx->args->server_addr_struct, ctx->args->server_port, err) == -1)
+    {
+        return STATE_ERROR;
+    }
+
+    return STATE_WAIT_HASH;
+}
+
+static int wait_hash_handler(struct fsm_context *context, struct fsm_error *err)
+{
+    struct fsm_context *ctx;
+    ctx = context;
+    SET_TRACE(context, "in wait hash", "STATE_WAIT_HASH");
+    if (receive_hash(ctx->args->sockfd, ctx->args->ws, err) == -1)
+    {
+        return STATE_ERROR;
+    }
+
+    return STATE_WAIT_WORK;
+}
+
+static int wait_work_handler(struct fsm_context *context, struct fsm_error *err)
+{
+    struct fsm_context *ctx;
+    ctx = context;
+    SET_TRACE(context, "in wait work", "STATE_WAIT_WORK");
+
+    int val = wait_for_work(ctx->args->sockfd, ctx->args->ws);
+
+    if (val == -1)
+        return STATE_ERROR;
+    else if (val == 1)
+        return STATE_CLEANUP;
+
+    if (ctx->args->timer_started)
+        return STATE_START_CRACKING;
+    else
+        return STATE_START_TIMER;
+}
+
+static int start_timer_handler(struct fsm_context *context, struct fsm_error *err)
+{
+    struct fsm_context *ctx;
+    ctx = context;
+    SET_TRACE(context, "in create socket", "STATE_START_TIMER");
+    ctx->args->start_cpu = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ctx->args->start_wall);
+
+    ctx->args->timer_started = 1;
+
+    return STATE_START_CRACKING;
+}
+
+static int start_cracking_handler(struct fsm_context *context, struct fsm_error *err)
+{
+    struct fsm_context *ctx;
+    ctx = context;
+    SET_TRACE(context, "in start cracking", "STATE_START_CRACKING");
+    if (create_threads(ctx->args->threads, ctx->args->ws) == -1)
+    {
+        return STATE_ERROR;
+    }
+
+    return STATE_STOP_TIMER;
+}
+
+static int stop_timer_handler(struct fsm_context *context, struct fsm_error *err)
+{
+    struct fsm_context *ctx;
+    ctx = context;
+    SET_TRACE(context, "in send file handler", "STATE_STOP_TIMER");
+
+    clock_gettime(CLOCK_MONOTONIC, &ctx->args->end_wall);
+
+    ctx->args->end_cpu = clock();
+    double wall        = (ctx->args->end_wall.tv_sec - ctx->args->start_wall.tv_sec) + (ctx->args->end_wall.tv_nsec - ctx->args->start_wall.tv_nsec) / 1e9;
+    double cpu_seconds = (double)(ctx->args->end_cpu - ctx->args->start_cpu) / (double)CLOCKS_PER_SEC;
+
+    printf("Wall: %.6f s\nCPU:  %.6f s\n", wall, cpu_seconds);
+
+    return STATE_CLEANUP;
 }
 
 static int cleanup_handler(struct fsm_context *context, struct fsm_error *err)
@@ -190,11 +240,6 @@ static int cleanup_handler(struct fsm_context *context, struct fsm_error *err)
     ctx = context;
     SET_TRACE(context, "in cleanup handler", "STATE_CLEANUP");
 
-    for (int i = 0; i < ctx->args->num_of_threads; i++)
-    {
-        pthread_join(ctx->args->thread_pool[i], NULL);
-    }
-
     if (ctx->args->sockfd)
     {
         if (socket_close(ctx->args->sockfd, err) == -1)
@@ -202,6 +247,12 @@ static int cleanup_handler(struct fsm_context *context, struct fsm_error *err)
             printf("close socket error\n");
         }
     }
+
+    fsm_error_clear(err);
+
+    if (ctx->args->ws)
+        if (ctx->args->ws->hash)
+            free(ctx->args->ws->hash);
 
     return FSM_EXIT;
 }

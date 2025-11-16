@@ -1,3 +1,4 @@
+#include "fsm.h"
 #include <crypt.h>
 #include <inttypes.h>
 #include <pthread.h>
@@ -15,6 +16,6 @@ static atomic_bool          found;
 static char                 found_candidate[64];
 static pthread_mutex_t      found_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-char                       *index_to_password(uint64_t index);
-void                       *worker(void *arg);
-int                         create_threads(size_t number_of_threads, const char *hash);
+char *index_to_password(uint64_t index);
+void *worker(void *arg);
+int   create_threads(size_t number_of_threads, struct worker_state *ws);
