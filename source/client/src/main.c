@@ -87,8 +87,9 @@ int main(int argc, char **argv)
         {STATE_CONNECT_SOCKET,   STATE_ERROR,            error_handler           },
         {STATE_WAIT_HASH,        STATE_ERROR,            error_handler           },
         {STATE_WAIT_WORK,        STATE_ERROR,            error_handler           },
-        {STATE_WAIT_WORK,        STATE_ERROR,            error_handler           },
+        {STATE_START_TIMER,      STATE_ERROR,            error_handler           },
         {STATE_START_CRACKING,   STATE_ERROR,            error_handler           },
+        {STATE_SEND_DONE,        STATE_ERROR,            error_handler           },
         {STATE_STOP_TIMER,       STATE_ERROR,            error_handler           },
         {STATE_CLEANUP,          FSM_EXIT,               NULL                    },
     };

@@ -14,10 +14,8 @@ set(INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include)
 
 set(SOURCE_LIST ${SOURCE_DIR}/main.c
         src/command_line.c
-        src/packet_config.c
         src/server_config.c
         src/fsm.c
-        src/protocol.c
         src/utils.c
 )
 

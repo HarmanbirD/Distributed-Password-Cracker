@@ -146,7 +146,7 @@ int wait_for_work(int sockfd, worker_state *ws, struct fsm_error *err)
     if (strncmp(buffer, "STOP", 4) == 0)
     {
         printf("[WORKER] Received STOP from server\n");
-        return 1; // special meaning: stop everything
+        return 1;
     }
 
     if (strncmp(buffer, "WORK ", 5) != 0)

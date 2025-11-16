@@ -2,7 +2,6 @@
 #define CLIENT_SERVER_CONFIG_H
 
 #include "fsm.h"
-#include "protocol.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>

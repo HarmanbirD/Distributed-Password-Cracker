@@ -28,10 +28,10 @@ typedef struct worker_state
     uint64_t start_index;
     uint64_t work_size;
     uint64_t end_index;
-
     uint64_t last_checkpoint_index;
+    time_t   started_at;
+    time_t   duration_secs;
     time_t   last_heard;
-
     uint64_t checkpoint_interval;
     uint32_t timeout_seconds;
 
@@ -58,6 +58,7 @@ typedef struct cracking_context
     char        password[255];
     work_chunk *queue;
     size_t      queue_len;
+    time_t      total_secs;
 } cracking_context;
 
 typedef struct arguments

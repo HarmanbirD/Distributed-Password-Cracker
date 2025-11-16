@@ -1,6 +1,5 @@
 #include "command_line.h"
 #include "fsm.h"
-#include "protocol.h"
 #include "server_config.h"
 #include "utils.h"
 #include <pthread.h>
@@ -46,6 +45,7 @@ int main(int argc, char **argv)
         .crack_ctx.found       = 0,
         .crack_ctx.queue       = NULL,
         .crack_ctx.queue_len   = 0,
+        .crack_ctx.total_secs  = 0,
         .crack_ctx.password[0] = '\0',
         .client_states         = NULL,
     };
@@ -218,12 +218,11 @@ static int stop_timer_handler(struct fsm_context *context, struct fsm_error *err
 
     clock_gettime(CLOCK_MONOTONIC, &ctx->args->end_wall);
 
-    // ctx->args->end_cpu = clock();
     double wall = (ctx->args->end_wall.tv_sec - ctx->args->start_wall.tv_sec) +
                   (ctx->args->end_wall.tv_nsec - ctx->args->start_wall.tv_nsec) / 1e9;
-    // double cpu_seconds = (double)(ctx->args->end_cpu - ctx->args->start_cpu) / (double)CLOCKS_PER_SEC;
 
-    printf("Wall: %.6f s\n", wall);
+    printf("Total time workers spent: %ld seconds\n", ctx->args->crack_ctx.total_secs);
+    printf("Server ran for:           %.2f seconds\n", wall);
 
     return STATE_CLEANUP;
 }

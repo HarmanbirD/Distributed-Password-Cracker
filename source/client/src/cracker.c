@@ -39,7 +39,6 @@ char *index_to_password(uint64_t index)
 
 void *worker(void *arg)
 {
-    printf("Start:\n");
     struct worker_state *ws = (struct worker_state *)arg;
 
     struct crypt_data cdata;
@@ -92,7 +91,6 @@ void *worker(void *arg)
 
 int create_threads(size_t number_of_threads, struct worker_state *ws)
 {
-    printf("hash: %s\n", ws->hash);
     pthread_t *threads = malloc(number_of_threads * sizeof(pthread_t));
     if (!threads)
         return -1;

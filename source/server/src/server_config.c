@@ -256,11 +256,11 @@ int assign_work_to_client(struct worker_state *ws, struct cracking_context *crac
     ws->end_index             = start + len - 1;
     ws->last_checkpoint_index = start;
     ws->assigned              = 1;
-    ws->last_heard            = time(NULL);
+    ws->started_at            = time(NULL);
+    ws->last_heard            = ws->started_at;
     ws->checkpoint_interval   = crack_ctx->checkpoint;
     ws->timeout_seconds       = crack_ctx->timeout;
 
-    // Construct work message
     char buffer[256];
     int  n = snprintf(buffer, sizeof(buffer),
                       "WORK %" PRIu64 " %" PRIu64 " %" PRIu64 " %u\n",
@@ -357,8 +357,12 @@ int handle_single_message(int sd, worker_state *ws, struct cracking_context *cra
             return -1;
         }
 
+        time_t now = time(NULL);
+
+        crack_ctx->total_secs += now - ws->last_heard;
+
         ws->last_checkpoint_index = idx;
-        ws->last_heard            = time(NULL);
+        ws->last_heard            = now;
 
         printf("[SERVER] Worker %d checkpoint → %" PRIu64 "\n", sd, idx);
         return 0;
@@ -367,7 +371,11 @@ int handle_single_message(int sd, worker_state *ws, struct cracking_context *cra
     {
         const char *pw = buffer + 6;
 
-        printf("[SERVER] WORKER %d FOUND PASSWORD: %s\n", sd, pw);
+        time_t now = time(NULL);
+
+        crack_ctx->total_secs += now - ws->last_heard;
+
+        printf("[SERVER] WORKER %d FOUND PASSWORD: %s in %ld seconds.\n", sd, pw, now - ws->started_at);
 
         crack_ctx->found = 1;
         strncpy(crack_ctx->password, pw, sizeof(crack_ctx->password));
@@ -376,7 +384,14 @@ int handle_single_message(int sd, worker_state *ws, struct cracking_context *cra
     }
     else if (strncmp(buffer, "DONE", 4) == 0)
     {
-        printf("[SERVER] Worker %d finished its work.\n", sd);
+        time_t now = time(NULL);
+
+        crack_ctx->total_secs += now - ws->last_heard;
+
+        ws->duration_secs = now - ws->started_at;
+
+        printf("[SERVER] Worker %d finished its work in %ld seconds.\n", sd, ws->duration_secs);
+
         ws->assigned = 0;
 
         if (!crack_ctx->found)
