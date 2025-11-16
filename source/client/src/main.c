@@ -1,8 +1,6 @@
 #include "command_line.h"
 #include "cracker.h"
 #include "fsm.h"
-#include "linked_list.h"
-#include "protocol.h"
 #include "server_config.h"
 #include <bits/time.h>
 #include <pthread.h>
