@@ -35,6 +35,13 @@ endif ()
 
 include_directories(${INCLUDE_DIR})
 
+option(ENABLE_DEBUG "Enable debug symbols for GDB" ON)
+
+if (ENABLE_DEBUG)
+    message(STATUS "Building with GDB debugging support")
+    add_compile_options(-g3 -O0 -fno-omit-frame-pointer)
+endif()
+
 add_compile_options("-Wall"
         "-Wextra"
         "-Wpedantic"
