@@ -3,93 +3,93 @@
 
 int parse_arguments(int argc, char *argv[], arguments *args, struct fsm_error *err)
 {
-    int  opt;
-    bool p_flag, s_flag, t_flag;
+    int opt;
+    int p_flag, s_flag, t_flag;
 
-    opterr                           = 0;
-    p_flag                           = 0;
-    s_flag                           = 0;
-    t_flag                           = 0;
+    opterr = 0;
+    p_flag = 0;
+    s_flag = 0;
+    t_flag = 0;
 
     static struct option long_opts[] = {
-        {"port", required_argument, 0, 'p'},
-        {"server", required_argument, 0, 's'},
+        {"port",    required_argument, 0, 'p'},
+        {"server",  required_argument, 0, 's'},
         {"threads", required_argument, 0, 't'},
-        {"help", no_argument, 0, 'h'},
-        {0, 0, 0, 0},
+        {"help",    no_argument,       0, 'h'},
+        {0,         0,                 0, 0  },
     };
 
     while ((opt = getopt_long(argc, argv, "p:s:t:h", long_opts, NULL)) != -1)
     {
         switch (opt)
         {
-        case 'p':
-        {
-            if (p_flag)
+            case 'p':
+            {
+                if (p_flag)
+                {
+                    usage(argv[0]);
+
+                    SET_ERROR(err, "option '-p' can only be passed in once.");
+
+                    return -1;
+                }
+
+                p_flag++;
+                args->server_port_str = optarg;
+                break;
+            }
+            case 's':
+            {
+                if (s_flag)
+                {
+                    usage(argv[0]);
+
+                    SET_ERROR(err, "option '-s' can only be passed in once.");
+
+                    return -1;
+                }
+
+                s_flag++;
+                args->server_addr = optarg;
+                break;
+            }
+            case 't':
+            {
+                if (t_flag)
+                {
+                    usage(argv[0]);
+
+                    SET_ERROR(err, "option '-t' can only be passed in once.");
+
+                    return -1;
+                }
+
+                t_flag++;
+                args->threads_str = optarg;
+
+                break;
+            }
+            case 'h':
             {
                 usage(argv[0]);
-
-                SET_ERROR(err, "option '-p' can only be passed in once.");
+                SET_ERROR(err, "user called for help");
 
                 return -1;
             }
-
-            p_flag++;
-            args->server_port_str = optarg;
-            break;
-        }
-        case 's':
-        {
-            if (s_flag)
+            case '?':
             {
-                usage(argv[0]);
+                char message[24];
 
-                SET_ERROR(err, "option '-s' can only be passed in once.");
+                snprintf(message, sizeof(message), "Unknown option '-%c'.", optopt);
+                usage(argv[0]);
+                SET_ERROR(err, message);
 
                 return -1;
             }
-
-            s_flag++;
-            args->server_addr = optarg;
-            break;
-        }
-        case 't':
-        {
-            if (t_flag)
+            default:
             {
                 usage(argv[0]);
-
-                SET_ERROR(err, "option '-t' can only be passed in once.");
-
-                return -1;
             }
-
-            t_flag++;
-            args->threads_str = optarg;
-
-            break;
-        }
-        case 'h':
-        {
-            usage(argv[0]);
-            SET_ERROR(err, "user called for help");
-
-            return -1;
-        }
-        case '?':
-        {
-            char message[24];
-
-            snprintf(message, sizeof(message), "Unknown option '-%c'.", optopt);
-            usage(argv[0]);
-            SET_ERROR(err, message);
-
-            return -1;
-        }
-        default:
-        {
-            usage(argv[0]);
-        }
         }
     }
 
@@ -117,8 +117,8 @@ void usage(const char *program_name)
             "                             (default: 4)\n"
             "  -h, --help                Display this help message and exit\n\n"
             "Examples:\n"
-            "  %s --server 192.168.1.10 --port 5000 --hash $6$... --work-size 1000\n"
-            "  %s -s example.com -p 5000 -H <hash> -c 500 -t 300\n\n",
+            "  %s --server 192.168.1.10 --port 5000\n"
+            "  %s -s example.com -p 5000 -t 8\n\n",
             program_name, program_name, program_name);
 
     fputs("Notes:\n", stderr);

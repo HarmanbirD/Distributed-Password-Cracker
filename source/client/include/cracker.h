@@ -11,6 +11,7 @@
 
 static const char *charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#%^&()_+-=.,:;?";
 #define CHARSET_SIZE (strlen(charset))
+
 static atomic_uint_fast64_t task_counter;
 static atomic_bool          found;
 static char                 found_candidate[64];
