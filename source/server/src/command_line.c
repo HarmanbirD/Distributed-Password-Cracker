@@ -232,6 +232,14 @@ int handle_arguments(const char *binary_name, arguments *args, struct fsm_error 
             return -1;
     }
 
+    if (args->crack_ctx.checkpoint > args->crack_ctx.work_size)
+    {
+        SET_ERROR(err, "Checkpoint must be less than work size!");
+        usage(binary_name);
+
+        return -1;
+    }
+
     if (args->timeout_str == NULL)
         args->crack_ctx.timeout = 600;
     else

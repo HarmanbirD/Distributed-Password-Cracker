@@ -132,8 +132,6 @@ int wait_for_work(int sockfd, worker_state *ws, struct fsm_error *err)
     char    buffer[512];
     ssize_t n = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
 
-    printf("Buffer: %s\n", buffer);
-
     if (n <= 0)
     {
         SET_ERROR(err, "[WORKER] recv() failed waiting for WORK");

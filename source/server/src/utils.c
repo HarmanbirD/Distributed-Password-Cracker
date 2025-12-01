@@ -56,6 +56,12 @@ int string_to_uint64(const char *str, uint64_t *out, struct fsm_error *err)
     char *end;
     errno = 0;
 
+    if (str[0] == '-')
+    {
+        SET_ERROR(err, "Value must be non-negative");
+        return -1;
+    }
+
     unsigned long long val = strtoull(str, &end, 10);
 
     if (errno != 0)
